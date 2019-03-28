@@ -60,9 +60,9 @@ class View
      */
     public static function instance($engine = [], $replace = [])
     {
-        // if (is_null(self::$instance)) {
+        if (is_null(self::$instance)) {
             self::$instance = new self($engine, $replace);
-        // }
+        }
         return self::$instance;
     }
 
@@ -79,6 +79,18 @@ class View
             self::$var = array_merge(self::$var, $name);
         } else {
             self::$var[$name] = $value;
+        }
+    }
+
+    /**
+     * 销毁当前对象
+     * @access public
+     * @return void
+     */
+    public static function destroy()
+    {
+        if (!is_null(self::$instance)) {
+            self::$instance = null;
         }
     }
 

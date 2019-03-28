@@ -171,7 +171,7 @@ class App
      */
     public static function initCommon()
     {
-        if (empty(self::$init)) {
+        // if (empty(self::$init)) {
             if (defined('APP_NAMESPACE')) {
                 self::$namespace = APP_NAMESPACE;
             }
@@ -223,7 +223,7 @@ class App
             Hook::listen('app_init');
 
             self::$init = true;
-        }
+        // }
 
         return Config::get();
     }
