@@ -17,6 +17,7 @@ use Swoole\Table;
  */
 class Session extends SessionBase
 {
+    protected static $config = [];
     /**
      * Session数据
      * @var array
@@ -50,7 +51,9 @@ class Session extends SessionBase
      */
     public static function init(array $config = [])
     {
-        $config = $config ?: self::$config;
+        if (empty($config)) {
+            $config = self::$config = Config::get('session');
+        }
 
         if (!empty($config['name'])) {
             self::$sessionName = $config['name'];
@@ -113,7 +116,7 @@ class Session extends SessionBase
         if (!$sessionId && $regenerate) {
             $sessionId = self::regenerate();
         }
-        
+
         return $sessionId;
     }
 
