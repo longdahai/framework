@@ -124,7 +124,7 @@ class Session extends SessionBase
      * @param  mixed         $value session值
      * @return void
      */
-    public static function set($name, $value, $prefix = null)
+    public static function set($name, $value = '', $prefix = null)
     {
         empty(self::$init) && self::boot();
 
