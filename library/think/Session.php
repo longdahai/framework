@@ -1,110 +1,67 @@
 <?php
 // +----------------------------------------------------------------------
-// | ThinkPHP [ WE CAN DO IT JUST THINK ]
+// | ThinkPHP [ WE CAN DO IT JUST THINK IT ]
 // +----------------------------------------------------------------------
-// | Copyright (c) 2006~2018 http://thinkphp.cn All rights reserved.
+// | Copyright (c) 2006-2018 http://thinkphp.cn All rights reserved.
 // +----------------------------------------------------------------------
 // | Licensed ( http://www.apache.org/licenses/LICENSE-2.0 )
 // +----------------------------------------------------------------------
 // | Author: liu21st <liu21st@gmail.com>
 // +----------------------------------------------------------------------
-
 namespace think;
 
-use think\exception\ClassNotFoundException;
+use Swoole\Table;
 
-class Session
+/**
+ * Swoole Cookie类
+ */
+class Session extends SessionBase
 {
-    protected static $prefix = '';
-    protected static $init   = null;
+    /**
+     * Session数据
+     * @var array
+     */
+    protected static $data = [];
 
     /**
-     * 设置或者获取session作用域（前缀）
-     * @param string $prefix
-     * @return string|void
+     * 记录Session name
+     * @var string
      */
-    public static function prefix($prefix = '')
-    {
-        empty(self::$init) && self::boot();
-        if (empty($prefix) && null !== $prefix) {
-            return self::$prefix;
-        } else {
-            self::$prefix = $prefix;
-        }
-    }
+    protected static $sessionName = 'PHPSESSID';
+
+    /**
+     * Session有效期
+     * @var int
+     */
+    protected static $expire = 0;
+
+    /**
+     * Swoole_table对象
+     * @var Table
+     */
+    protected static $swooleTable;
 
     /**
      * session初始化
-     * @param array $config
+     * @access public
+     * @param  array $config
      * @return void
      * @throws \think\Exception
      */
     public static function init(array $config = [])
     {
-        if (empty($config)) {
-            $config = Config::get('session');
-        }
-        // 记录初始化信息
-        App::$debug && Log::record('[ SESSION ] INIT ' . var_export($config, true), 'info');
-        $isDoStart = false;
-        if (isset($config['use_trans_sid'])) {
-            ini_set('session.use_trans_sid', $config['use_trans_sid'] ? 1 : 0);
+        $config = $config ?: self::$config;
+
+        if (!empty($config['name'])) {
+            self::$sessionName = $config['name'];
         }
 
-        // 启动session
-        if (!empty($config['auto_start']) && PHP_SESSION_ACTIVE != session_status()) {
-            ini_set('session.auto_start', 0);
-            $isDoStart = true;
+        if (!empty($config['expire'])) {
+            self::$expire = $config['expire'];
         }
 
-        if (isset($config['prefix']) && ('' === self::$prefix || null === self::$prefix)) {
-            self::$prefix = $config['prefix'];
-        }
-        if (isset($config['var_session_id']) && isset($_REQUEST[$config['var_session_id']])) {
-            session_id($_REQUEST[$config['var_session_id']]);
-        } elseif (isset($config['id']) && !empty($config['id'])) {
-            session_id($config['id']);
-        }
-        if (isset($config['name'])) {
-            session_name($config['name']);
-        }
-        if (isset($config['path'])) {
-            session_save_path($config['path']);
-        }
-        if (isset($config['domain'])) {
-            ini_set('session.cookie_domain', $config['domain']);
-        }
-        if (isset($config['expire'])) {
-            ini_set('session.gc_maxlifetime', $config['expire']);
-            ini_set('session.cookie_lifetime', $config['expire']);
-        }
-        if (isset($config['secure'])) {
-            ini_set('session.cookie_secure', $config['secure']);
-        }
-        if (isset($config['httponly'])) {
-            ini_set('session.cookie_httponly', $config['httponly']);
-        }
-        if (isset($config['use_cookies'])) {
-            ini_set('session.use_cookies', $config['use_cookies'] ? 1 : 0);
-        }
-        if (isset($config['cache_limiter'])) {
-            session_cache_limiter($config['cache_limiter']);
-        }
-        if (isset($config['cache_expire'])) {
-            session_cache_expire($config['cache_expire']);
-        }
-        if (!empty($config['type'])) {
-            // 读取session驱动
-            $class = false !== strpos($config['type'], '\\') ? $config['type'] : '\\think\\session\\driver\\' . ucwords($config['type']);
-
-            // 检查驱动类
-            if (!class_exists($class) || !session_set_save_handler(new $class($config))) {
-                throw new ClassNotFoundException('error session handler:' . $class, $class);
-            }
-        }
-        if ($isDoStart) {
-            session_start();
-            self::$init = true;
+        if (!empty($config['auto_start'])) {
+            self::start();
         } else {
             self::$init = false;
         }
@@ -112,255 +69,361 @@ class Session
 
     /**
      * session自动启动或者初始化
+     * @access public
      * @return void
      */
     public static function boot()
     {
         if (is_null(self::$init)) {
             self::init();
-        } elseif (false === self::$init) {
-            if (PHP_SESSION_ACTIVE != session_status()) {
-                session_start();
-            }
-            self::$init = true;
         }
+
+        if (false === self::$init) {
+            self::start();
+        }
+    }
+
+    public static function name($name)
+    {
+        self::$sessionName = $name;
+    }
+
+    /**
+     * session_id设置
+     * @access public
+     * @param  string     $id session_id
+     * @param  int        $expire Session有效期
+     * @return void
+     */
+    public static function setId($id, $expire = null)
+    {
+        Cookie::set(self::$sessionName, $id, $expire);
+    }
+
+    /**
+     * 获取session_id
+     * @access public
+     * @param  bool        $regenerate 不存在是否自动生成
+     * @return string
+     */
+    public static function getId($regenerate = true)
+    {
+        $sessionId = Cookie::get(self::$sessionName) ?: '';
+
+        if (!$sessionId && $regenerate) {
+            $sessionId = self::regenerate();
+        }
+        
+        return $sessionId;
     }
 
     /**
      * session设置
-     * @param string        $name session名称
-     * @param mixed         $value session值
-     * @param string|null   $prefix 作用域（前缀）
+     * @access public
+     * @param  string        $name session名称
+     * @param  mixed         $value session值
      * @return void
      */
-    public static function set($name, $value = '', $prefix = null)
+    public static function set($name, $value, $prefix = null)
     {
         empty(self::$init) && self::boot();
 
-        $prefix = !is_null($prefix) ? $prefix : self::$prefix;
+        $sessionId = self::getId();
+
+        self::setSession($sessionId, $name, $value);
+    }
+
+    /**
+     * session设置
+     * @access protected
+     * @param  string        $sessionId session_id
+     * @param  string        $name session名称
+     * @param  mixed         $value session值
+     * @param  string|null   $prefix 作用域（前缀）
+     * @return void
+     */
+    protected static function setSession($sessionId, $name, $value)
+    {
         if (strpos($name, '.')) {
             // 二维数组赋值
             list($name1, $name2) = explode('.', $name);
-            if ($prefix) {
-                $_SESSION[$prefix][$name1][$name2] = $value;
-            } else {
-                $_SESSION[$name1][$name2] = $value;
-            }
-        } elseif ($prefix) {
-            $_SESSION[$prefix][$name] = $value;
+
+            self::$data[$sessionId][$name1][$name2] = $value;
         } else {
-            $_SESSION[$name] = $value;
+            self::$data[$sessionId][$name] = $value;
         }
+
+        // 持久化session数据
+        self::writeSessionData($sessionId);
     }
 
     /**
      * session获取
-     * @param string        $name session名称
-     * @param string|null   $prefix 作用域（前缀）
+     * @access public
+     * @param  string        $name session名称
      * @return mixed
      */
     public static function get($name = '', $prefix = null)
     {
         empty(self::$init) && self::boot();
-        $prefix = !is_null($prefix) ? $prefix : self::$prefix;
-        if ('' == $name) {
-            // 获取全部的session
-            $value = $prefix ? (!empty($_SESSION[$prefix]) ? $_SESSION[$prefix] : []) : $_SESSION;
-        } elseif ($prefix) {
-            // 获取session
-            if (strpos($name, '.')) {
-                list($name1, $name2) = explode('.', $name);
-                $value               = isset($_SESSION[$prefix][$name1][$name2]) ? $_SESSION[$prefix][$name1][$name2] : null;
-            } else {
-                $value = isset($_SESSION[$prefix][$name]) ? $_SESSION[$prefix][$name] : null;
-            }
-        } else {
-            if (strpos($name, '.')) {
-                list($name1, $name2) = explode('.', $name);
-                $value               = isset($_SESSION[$name1][$name2]) ? $_SESSION[$name1][$name2] : null;
-            } else {
-                $value = isset($_SESSION[$name]) ? $_SESSION[$name] : null;
+
+        $sessionId = self::getId();
+
+        return self::readSession($sessionId, $name);
+    }
+
+    /**
+     * session获取
+     * @access protected
+     * @param  string        $sessionId session_id
+     * @param  string        $name session名称
+     * @return mixed
+     */
+    protected static function readSession($sessionId, $name = '')
+    {
+        $value = isset(self::$data[$sessionId]) ? self::$data[$sessionId] : [];
+
+        if (!is_array($value)) {
+            $value = [];
+        }
+
+        if ('' != $name) {
+            $name = explode('.', $name);
+
+            foreach ($name as $val) {
+                if (isset($value[$val])) {
+                    $value = $value[$val];
+                } else {
+                    $value = null;
+                    break;
+                }
             }
         }
+
         return $value;
     }
 
     /**
-     * session获取并删除
-     * @param string        $name session名称
-     * @param string|null   $prefix 作用域（前缀）
-     * @return mixed
-     */
-    public static function pull($name, $prefix = null)
-    {
-        $result = self::get($name, $prefix);
-        if ($result) {
-            self::delete($name, $prefix);
-            return $result;
-        } else {
-            return;
-        }
-    }
-
-    /**
-     * session设置 下一次请求有效
-     * @param string        $name session名称
-     * @param mixed         $value session值
-     * @param string|null   $prefix 作用域（前缀）
-     * @return void
-     */
-    public static function flash($name, $value)
-    {
-        self::set($name, $value);
-        if (!self::has('__flash__.__time__')) {
-            self::set('__flash__.__time__', $_SERVER['REQUEST_TIME_FLOAT']);
-        }
-        self::push('__flash__', $name);
-    }
-
-    /**
-     * 清空当前请求的session数据
-     * @return void
-     */
-    public static function flush()
-    {
-        if (self::$init) {
-            $item = self::get('__flash__');
-
-            if (!empty($item)) {
-                $time = $item['__time__'];
-                if ($_SERVER['REQUEST_TIME_FLOAT'] > $time) {
-                    unset($item['__time__']);
-                    self::delete($item);
-                    self::set('__flash__', []);
-                }
-            }
-        }
-    }
-
-    /**
      * 删除session数据
-     * @param string|array  $name session名称
-     * @param string|null   $prefix 作用域（前缀）
+     * @access public
+     * @param  string|array  $name session名称
      * @return void
      */
     public static function delete($name, $prefix = null)
     {
         empty(self::$init) && self::boot();
-        $prefix = !is_null($prefix) ? $prefix : self::$prefix;
+
+        $sessionId = self::getId(false);
+
+        if ($sessionId) {
+            self::deleteSession($sessionId, $name);
+
+            // 持久化session数据
+            self::writeSessionData($sessionId);
+        }
+    }
+
+    /**
+     * 删除session数据
+     * @access protected
+     * @param  string        $sessionId session_id
+     * @param  string|array  $name session名称
+     * @return void
+     */
+    protected static function deleteSession($sessionId, $name)
+    {
         if (is_array($name)) {
             foreach ($name as $key) {
-                self::delete($key, $prefix);
+                self::deleteSession($sessionId, $key);
             }
         } elseif (strpos($name, '.')) {
             list($name1, $name2) = explode('.', $name);
-            if ($prefix) {
-                unset($_SESSION[$prefix][$name1][$name2]);
-            } else {
-                unset($_SESSION[$name1][$name2]);
-            }
+            unset(self::$data[$sessionId][$name1][$name2]);
         } else {
-            if ($prefix) {
-                unset($_SESSION[$prefix][$name]);
-            } else {
-                unset($_SESSION[$name]);
-            }
+            unset(self::$data[$sessionId][$name]);
+        }
+    }
+
+    protected static function writeSessionData($sessionId)
+    {
+        if (self::$swooleTable) {
+            self::$swooleTable->set('sess_' . $sessionId, [
+                'data'   => json_encode(self::$data[$sessionId]),
+                'expire' => time() + self::$expire,
+            ]);
+        } else {
+            Cache::set('sess_' . $sessionId, self::$data[$sessionId], self::$expire);
         }
     }
 
     /**
      * 清空session数据
-     * @param string|null   $prefix 作用域（前缀）
+     * @access public
      * @return void
      */
     public static function clear($prefix = null)
     {
         empty(self::$init) && self::boot();
-        $prefix = !is_null($prefix) ? $prefix : self::$prefix;
-        if ($prefix) {
-            unset($_SESSION[$prefix]);
+
+        $sessionId = self::getId(false);
+
+        if ($sessionId) {
+            self::clearSession($sessionId);
+        }
+    }
+
+    /**
+     * 清空session数据
+     * @access protected
+     * @param  string        $sessionId session_id
+     * @return void
+     */
+    protected static function clearSession($sessionId)
+    {
+        self::$data[$sessionId] = [];
+
+        if (self::$swooleTable) {
+            self::$swooleTable->del('sess_' . $sessionId);
         } else {
-            $_SESSION = [];
+            Cache::rm('sess_' . $sessionId);
         }
     }
 
     /**
      * 判断session数据
-     * @param string        $name session名称
-     * @param string|null   $prefix
+     * @access public
+     * @param  string        $name session名称
      * @return bool
      */
     public static function has($name, $prefix = null)
     {
         empty(self::$init) && self::boot();
-        $prefix = !is_null($prefix) ? $prefix : self::$prefix;
-        if (strpos($name, '.')) {
-            // 支持数组
-            list($name1, $name2) = explode('.', $name);
-            return $prefix ? isset($_SESSION[$prefix][$name1][$name2]) : isset($_SESSION[$name1][$name2]);
-        } else {
-            return $prefix ? isset($_SESSION[$prefix][$name]) : isset($_SESSION[$name]);
+
+        $sessionId = self::getId(false);
+
+        if ($sessionId) {
+            return self::hasSession($sessionId, $name);
         }
+
+        return false;
     }
 
     /**
-     * 添加数据到一个session数组
-     * @param  string  $key
-     * @param  mixed   $value
-     * @return void
+     * 判断session数据
+     * @access protected
+     * @param  string        $sessionId session_id
+     * @param  string        $name session名称
+     * @return bool
      */
-    public static function push($key, $value)
+    protected static function hasSession($sessionId, $name)
     {
-        $array = self::get($key);
-        if (is_null($array)) {
-            $array = [];
+        $value = isset(self::$data[$sessionId]) ? self::$data[$sessionId] : [];
+
+        $name = explode('.', $name);
+
+        foreach ($name as $val) {
+            if (!isset($value[$val])) {
+                return false;
+            } else {
+                $value = $value[$val];
+            }
         }
-        $array[] = $value;
-        self::set($key, $array);
+
+        return true;
     }
 
     /**
      * 启动session
+     * @access public
      * @return void
      */
     public static function start()
     {
-        session_start();
+        $sessionId = self::getId();
+
+        // 读取缓存数据
+        if (empty(self::$data[$sessionId])) {
+            if (!empty(self::$config['use_swoole_table'])) {
+                self::$swooleTable = Container::get('swoole_table');
+
+                $result = self::$swooleTable->get('sess_' . $sessionId);
+
+                if (0 == $result['expire'] || time() <= $result['expire']) {
+                    $data = $result['data'];
+                }
+            } else {
+                $data = Cache::get('sess_' . $sessionId);
+            }
+
+            if (!empty($data)) {
+                self::$data[$sessionId] = $data;
+            }
+        }
+
         self::$init = true;
     }
 
     /**
      * 销毁session
+     * @access public
      * @return void
      */
     public static function destroy()
     {
-        if (!empty($_SESSION)) {
-            $_SESSION = [];
+        $sessionId = self::getId(false);
+
+        if ($sessionId) {
+            self::destroySession($sessionId);
         }
-        session_unset();
-        session_destroy();
+
         self::$init = null;
     }
 
     /**
-     * 重新生成session_id
-     * @param bool $delete 是否删除关联会话文件
+     * 销毁session
+     * @access protected
+     * @param  string        $sessionId session_id
      * @return void
+     */
+    protected static function destroySession($sessionId)
+    {
+        if (isset(self::$data[$sessionId])) {
+            unset(self::$data[$sessionId]);
+
+            if (self::$swooleTable) {
+                self::$swooleTable->del('sess_' . $sessionId);
+            } else {
+                Cache::rm('sess_' . $sessionId);
+            }
+        }
+    }
+
+    /**
+     * 生成session_id
+     * @access public
+     * @param  bool $delete 是否删除关联会话文件
+     * @return string
      */
     public static function regenerate($delete = false)
     {
-        session_regenerate_id($delete);
+        if ($delete) {
+            self::destroy();
+        }
+
+        $sessionId = md5(microtime(true) . uniqid());
+
+        self::setId($sessionId);
+
+        return $sessionId;
     }
 
     /**
      * 暂停session
+     * @access public
      * @return void
      */
     public static function pause()
     {
-        // 暂停session
-        session_write_close();
         self::$init = false;
     }
 }
