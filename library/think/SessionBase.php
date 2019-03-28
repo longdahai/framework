@@ -193,9 +193,9 @@ class SessionBase
      */
     public static function pull($name, $prefix = null)
     {
-        $result = self::get($name, $prefix);
+        $result = static::get($name, $prefix);
         if ($result) {
-            self::delete($name, $prefix);
+            static::delete($name, $prefix);
             return $result;
         } else {
             return;
@@ -211,9 +211,9 @@ class SessionBase
      */
     public static function flash($name, $value)
     {
-        self::set($name, $value);
-        if (!self::has('__flash__.__time__')) {
-            self::set('__flash__.__time__', $_SERVER['REQUEST_TIME_FLOAT']);
+        static::set($name, $value);
+        if (!static::has('__flash__.__time__')) {
+            static::set('__flash__.__time__', $_SERVER['REQUEST_TIME_FLOAT']);
         }
         self::push('__flash__', $name);
     }
@@ -225,14 +225,14 @@ class SessionBase
     public static function flush()
     {
         if (self::$init) {
-            $item = self::get('__flash__');
+            $item = static::get('__flash__');
 
             if (!empty($item)) {
                 $time = $item['__time__'];
                 if ($_SERVER['REQUEST_TIME_FLOAT'] > $time) {
                     unset($item['__time__']);
-                    self::delete($item);
-                    self::set('__flash__', []);
+                    static::delete($item);
+                    static::set('__flash__', []);
                 }
             }
         }
@@ -250,7 +250,7 @@ class SessionBase
         $prefix = !is_null($prefix) ? $prefix : self::$prefix;
         if (is_array($name)) {
             foreach ($name as $key) {
-                self::delete($key, $prefix);
+                static::delete($key, $prefix);
             }
         } elseif (strpos($name, '.')) {
             list($name1, $name2) = explode('.', $name);
@@ -311,12 +311,12 @@ class SessionBase
      */
     public static function push($key, $value)
     {
-        $array = self::get($key);
+        $array = static::get($key);
         if (is_null($array)) {
             $array = [];
         }
         $array[] = $value;
-        self::set($key, $array);
+        static::set($key, $array);
     }
 
     /**

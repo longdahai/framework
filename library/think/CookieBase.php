@@ -105,9 +105,8 @@ class CookieBase
         0;
 
         if ($config['setcookie']) {
-            setcookie(
-                $name, $value, $expire, $config['path'], $config['domain'],
-                $config['secure'], $config['httponly']
+            static::setCookie(
+                $name, $value, $expire, $config
             );
         }
 
@@ -207,9 +206,8 @@ class CookieBase
         $name   = $prefix . $name;
 
         if ($config['setcookie']) {
-            setcookie(
-                $name, '', $_SERVER['REQUEST_TIME'] - 3600, $config['path'],
-                $config['domain'], $config['secure'], $config['httponly']
+            static::setCookie(
+                $name, '', $_SERVER['REQUEST_TIME'] - 3600, $config
             );
         }
 
@@ -239,9 +237,8 @@ class CookieBase
             foreach ($_COOKIE as $key => $val) {
                 if (0 === strpos($key, $prefix)) {
                     if ($config['setcookie']) {
-                        setcookie(
-                            $key, '', $_SERVER['REQUEST_TIME'] - 3600, $config['path'],
-                            $config['domain'], $config['secure'], $config['httponly']
+                        static::setCookie(
+                            $key, '', $_SERVER['REQUEST_TIME'] - 3600, $config
                         );
                     }
 
